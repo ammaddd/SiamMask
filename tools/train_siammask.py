@@ -11,7 +11,7 @@ import shutil
 import time
 import json
 import math
-from comet_ml import Experiment
+from comet_utils import CometLogger
 import torch
 from torch.utils.data import DataLoader
 
@@ -62,7 +62,7 @@ parser.add_argument('-l', '--log', default="log.txt", type=str,
 parser.add_argument('-s', '--save_dir', default='snapshot', type=str,
                     help='save dir')
 parser.add_argument('--log-dir', default='board', help='TensorBoard log dir')
-
+parser.add_argument('--comet', default=False, type=bool, help='enable comet logging')
 
 best_acc = 0.
 
@@ -119,9 +119,9 @@ def main():
     global args, best_acc, tb_writer, logger
     args = parser.parse_args()
 
-    experiment = Experiment(auto_metric_logging=False)
-    experiment.add_tag("train_siammask.py")
-    experiment.log_others(vars(args))
+    comet_logger = CometLogger(args.comet, auto_metric_logging=False)
+    comet_logger.add_tag("train_siammask.py")
+    comet_logger.log_others(vars(args))
 
     init_log('global', logging.INFO)
 
@@ -134,7 +134,7 @@ def main():
 
     cfg = load_config(args)
     logger.info("config \n{}".format(json.dumps(cfg, indent=4)))
-    experiment.log_asset_data(cfg, "cfg.yaml")
+    comet_logger.log_asset_data(cfg, "cfg.yaml")
 
     if args.log_dir:
         tb_writer = SummaryWriter(args.log_dir)
@@ -172,11 +172,11 @@ def main():
     logger.info('model prepare done')
 
     train(train_loader, dist_model, optimizer, lr_scheduler, args.start_epoch, cfg,
-          experiment)
+          comet_logger)
 
 
 def train(train_loader, model, optimizer, lr_scheduler, epoch, cfg,
-          experiment):
+          comet_logger):
     global tb_index, best_acc, cur_lr, logger
     cur_lr = lr_scheduler.get_cur_lr()
     logger = logging.getLogger('global')
@@ -209,10 +209,10 @@ def train(train_loader, model, optimizer, lr_scheduler, epoch, cfg,
                 }, False,
                 os.path.join(args.save_dir, 'checkpoint_e%d.pth' % (epoch)),
                 os.path.join(args.save_dir, 'best.pth'))
-            experiment.log_model('SiamMask', os.path.join(args.save_dir,
-                                 'checkpoint_e%d.pth' % (epoch)))
-            experiment.log_model('SiamMask', os.path.join(args.save_dir,
-                                 'best.pth'))
+            comet_logger.log_model('SiamMask', os.path.join(args.save_dir,
+                                   'checkpoint_e%d.pth' % (epoch)))
+            comet_logger.log_model('SiamMask', os.path.join(args.save_dir,
+                                   'best.pth'))
 
             if epoch == args.epochs:
                 return
@@ -223,8 +223,8 @@ def train(train_loader, model, optimizer, lr_scheduler, epoch, cfg,
 
             lr_scheduler.step(epoch)
             cur_lr = lr_scheduler.get_cur_lr()
-            experiment.log_metric("learning_rate", cur_lr, step=iter,
-                                  epoch=epoch)
+            comet_logger.log_metric("learning_rate", cur_lr, step=iter,
+                                    epoch=epoch)
 
             logger.info('epoch:{}'.format(epoch))
 
@@ -249,12 +249,12 @@ def train(train_loader, model, optimizer, lr_scheduler, epoch, cfg,
 
         outputs = model(x)
         if iter % 200 == 0:
-            experiment.log_image(input[0][0].detach().cpu().numpy()[::-1, :, :],
-                                 name="template",
-                                 image_channels="first", step=iter)
-            experiment.log_image(input[1][0].detach().cpu().numpy()[::-1, :, :],
-                                 name="search",
-                                 image_channels="first", step=iter)
+            comet_logger.log_image(input[0][0].detach().cpu().numpy()[::-1, :, :],
+                                   name="template",
+                                   image_channels="first", step=iter)
+            comet_logger.log_image(input[1][0].detach().cpu().numpy()[::-1, :, :],
+                                   name="search",
+                                   image_channels="first", step=iter)
 
         rpn_cls_loss, rpn_loc_loss, rpn_mask_loss = torch.mean(outputs['losses'][0]), torch.mean(outputs['losses'][1]), torch.mean(outputs['losses'][2])
         mask_iou_mean, mask_iou_at_5, mask_iou_at_7 = torch.mean(outputs['accuracy'][0]), torch.mean(outputs['accuracy'][1]), torch.mean(outputs['accuracy'][2])
@@ -291,20 +291,20 @@ def train(train_loader, model, optimizer, lr_scheduler, epoch, cfg,
         tb_writer.add_scalar('mask/AP@.5', mask_iou_at_5, tb_index)
         tb_writer.add_scalar('mask/AP@.7', mask_iou_at_7, tb_index)
 
-        experiment.log_metric("rpn_cls_loss", rpn_cls_loss, step=iter,
-                              epoch=epoch)
-        experiment.log_metric("rpn_loc_loss", rpn_loc_loss, step=iter,
-                              epoch=epoch)
-        experiment.log_metric("rpn_mask_loss", rpn_mask_loss, step=iter,
-                              epoch=epoch)
-        experiment.log_metric("mask_iou_mean", mask_iou_mean, step=iter,
-                              epoch=epoch)
-        experiment.log_metric("mask_iou_at_5", mask_iou_at_5, step=iter,
-                              epoch=epoch)
-        experiment.log_metric("mask_iou_at_7", mask_iou_at_7, step=iter,
-                              epoch=epoch)
-        experiment.log_metric("train_loss", loss, step=iter,
-                              epoch=epoch)
+        comet_logger.log_metric("rpn_cls_loss", rpn_cls_loss, step=iter,
+                                epoch=epoch)
+        comet_logger.log_metric("rpn_loc_loss", rpn_loc_loss, step=iter,
+                                epoch=epoch)
+        comet_logger.log_metric("rpn_mask_loss", rpn_mask_loss, step=iter,
+                                epoch=epoch)
+        comet_logger.log_metric("mask_iou_mean", mask_iou_mean, step=iter,
+                                epoch=epoch)
+        comet_logger.log_metric("mask_iou_at_5", mask_iou_at_5, step=iter,
+                                epoch=epoch)
+        comet_logger.log_metric("mask_iou_at_7", mask_iou_at_7, step=iter,
+                                epoch=epoch)
+        comet_logger.log_metric("train_loss", loss, step=iter,
+                                epoch=epoch)
 
         end = time.time()
 
